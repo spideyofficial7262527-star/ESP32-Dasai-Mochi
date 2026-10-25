@@ -1,74 +1,62 @@
-name: Compile ESP32 OLED Firmware
+name: Build Mochi Firmware
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - '**.ino'
-      - '**.h'
+      - 'src/**'
+      - 'platformio.ini'
       - '.github/workflows/compile.yml'
 
 jobs:
-  compile:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
+      - name: Download source
         uses: actions/checkout@v4
 
-      - name: Set up Arduino CLI
-        uses: arduino/setup-arduino-cli@v2
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
 
-      - name: Initialize Arduino CLI
-        run: arduino-cli config init
+      - name: Install PlatformIO
+        run: pip install platformio
 
-      - name: Install ESP32 platform
-        run: |
-          arduino-cli core update-index
-          arduino-cli core install esp32:esp32
-
-      - name: Install libraries
-        run: |
-          arduino-cli lib update-index
-          arduino-cli lib install "Adafruit GFX Library"
-          arduino-cli lib install "Adafruit SSD1306"
-          arduino-cli lib install "Adafruit BusIO"
-
-      - name: Find and prepare sketch
+      - name: Locate PlatformIO project
         shell: bash
         run: |
-          INO=$(find . -type f -name '*.ino' \
+          CONFIG=$(find . -name platformio.ini \
             -not -path './.git/*' | head -n 1)
 
-          if [ -z "$INO" ]; then
-            echo "ERROR: No .ino file found in repository."
-            echo "Repository files:"
+          if [ -z "$CONFIG" ]; then
+            echo "ERROR: platformio.ini not found!"
             find . -maxdepth 4 -type f | head -200
             exit 1
           fi
 
-          echo "Found sketch: $INO"
-          SKETCH_DIR=$(dirname "$INO")
-          SKETCH_NAME=$(basename "$INO" .ino)
+          PROJECT_DIR=$(dirname "$CONFIG")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Found project: $PROJECT_DIR"
 
-          mkdir -p "build/$SKETCH_NAME"
-          cp "$INO" "build/$SKETCH_NAME/$SKETCH_NAME.ino"
+      - name: Compile Mochi
+        run: pio run -d "$PROJECT_DIR" -e esp32-s3-devkitc-1
 
-          find "$SKETCH_DIR" -maxdepth 1 -type f -name '*.h' \
-            -exec cp {} "build/$SKETCH_NAME/" \;
-
-          echo "SKETCH_NAME=$SKETCH_NAME" >> "$GITHUB_ENV"
-
-      - name: Compile firmware
+      - name: Collect firmware
+        shell: bash
         run: |
-          arduino-cli compile \
-            --fqbn esp32:esp32:esp32 \
-            --output-dir build/output \
-            "build/$SKETCH_NAME"
+          mkdir -p firmware
 
-      - name: Upload firmware
+          find "$PROJECT_DIR/.pio/build/esp32-s3-devkitc-1" \
+            -maxdepth 1 -type f -name '*.bin' \
+            -exec cp {} firmware/ \;
+
+          ls -lh firmware
+
+      - name: Upload BIN files
         uses: actions/upload-artifact@v4
         with:
-          name: ESP32-OLED-Firmware
-          path: build/output/*.bin
+          name: Mochi-ESP32-Firmware
+          path: firmware/*.bin
           if-no-files-found: error
