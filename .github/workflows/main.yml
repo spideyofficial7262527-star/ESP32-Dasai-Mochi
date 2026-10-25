@@ -1,0 +1,55 @@
+name: Compile ESP32 OLED Firmware
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '**.ino'
+      - '**.h'
+      - '.github/workflows/compile.yml'
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Initialize Arduino CLI
+        run: arduino-cli config init
+
+      - name: Install ESP32 platform
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+
+      - name: Install required libraries
+        run: |
+          arduino-cli lib update-index
+          arduino-cli lib install "Adafruit GFX Library"
+          arduino-cli lib install "Adafruit SSD1306"
+          arduino-cli lib install "Adafruit BusIO"
+
+      - name: Prepare sketch folder
+        run: |
+          mkdir -p build/OLEDAnimation
+          cp *.ino build/OLEDAnimation/OLEDAnimation.ino
+          cp *.h build/OLEDAnimation/ 2>/dev/null || true
+
+      - name: Compile firmware
+        run: |
+          arduino-cli compile \
+            --fqbn esp32:esp32:esp32 \
+            --output-dir build/output \
+            build/OLEDAnimation
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: ESP32-OLED-Firmware
+          path: build/output/*.bin
+          if-no-files-found: error
