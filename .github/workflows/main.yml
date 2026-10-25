@@ -27,25 +27,44 @@ jobs:
           arduino-cli core update-index
           arduino-cli core install esp32:esp32
 
-      - name: Install required libraries
+      - name: Install libraries
         run: |
           arduino-cli lib update-index
           arduino-cli lib install "Adafruit GFX Library"
           arduino-cli lib install "Adafruit SSD1306"
           arduino-cli lib install "Adafruit BusIO"
 
-      - name: Prepare sketch folder
+      - name: Find and prepare sketch
+        shell: bash
         run: |
-          mkdir -p build/OLEDAnimation
-          cp *.ino build/OLEDAnimation/OLEDAnimation.ino
-          cp *.h build/OLEDAnimation/ 2>/dev/null || true
+          INO=$(find . -type f -name '*.ino' \
+            -not -path './.git/*' | head -n 1)
+
+          if [ -z "$INO" ]; then
+            echo "ERROR: No .ino file found in repository."
+            echo "Repository files:"
+            find . -maxdepth 4 -type f | head -200
+            exit 1
+          fi
+
+          echo "Found sketch: $INO"
+          SKETCH_DIR=$(dirname "$INO")
+          SKETCH_NAME=$(basename "$INO" .ino)
+
+          mkdir -p "build/$SKETCH_NAME"
+          cp "$INO" "build/$SKETCH_NAME/$SKETCH_NAME.ino"
+
+          find "$SKETCH_DIR" -maxdepth 1 -type f -name '*.h' \
+            -exec cp {} "build/$SKETCH_NAME/" \;
+
+          echo "SKETCH_NAME=$SKETCH_NAME" >> "$GITHUB_ENV"
 
       - name: Compile firmware
         run: |
           arduino-cli compile \
             --fqbn esp32:esp32:esp32 \
             --output-dir build/output \
-            build/OLEDAnimation
+            "build/$SKETCH_NAME"
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
